@@ -1,8 +1,8 @@
 import Joi from "joi";
+import clientPromise from "../../lib/db";
 import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
 
 const COLLECTION = "users";
 
