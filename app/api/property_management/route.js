@@ -15,12 +15,14 @@ export async function POST(req) {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
 
-    const result = await db.collection("property_management").insertOne({
-      ...body,
-      createdBy: user.email || "system",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    const result = await db
+      .collection("property_management_services")
+      .insertOne({
+        ...body,
+        createdBy: user.email || "system",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
 
     return NextResponse.json(
       { success: true, id: result.insertedId },
@@ -119,7 +121,7 @@ export async function DELETE(req) {
     const db = client.db(process.env.MONGODB_DBNAME);
 
     const result = await db
-      .collection("property_management")
+      .collection("property_management_services")
       .deleteOne({ _id: new ObjectId(id) });
 
     if (result.deletedCount === 0)

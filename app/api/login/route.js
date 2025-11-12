@@ -1,63 +1,10 @@
 import Joi from "joi";
-import clientPromise from "../../lib/db";
 import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
-import { generateAccessToken, generateRefreshToken } from "../../lib/jwt";
 import jwt from "jsonwebtoken";
 
 const COLLECTION = "users";
-//post method to create user login
-// export async function POST(req) {
-//   try {
-//     const body = await req.json();
-//     const { email, mobile, password, name } = body;
-
-//     if (!email && !mobile) {
-//       return NextResponse.json(
-//         { error: "Either email or mobile is required" },
-//         { status: 400 }
-//       );
-//     }
-//     if (!password) {
-//       return NextResponse.json(
-//         { error: "Password is required" },
-//         { status: 400 }
-//       );
-//     }
-//     const client = await clientPromise;
-//     const db = client.db(process.env.MONGODB_DBNAME);
-//     const user = await db.collection(COLLECTION).findOne({
-//       $or: [{ email }, { mobile }],
-//     });
-//     if (user) {
-//       return NextResponse.json(
-//         { error: "User already exists with this email or mobile" },
-//         { status: 400 }
-//       );
-//     }
-//     const hashedPassword = await bcrypt.hash(password, 10);
-//     const newUser = {
-//       name: name || "",
-//       email: email || "",
-//       mobile: mobile || "",
-//       password: hashedPassword,
-//       createdAt: new Date(),
-//     };
-//     const result = await db.collection(COLLECTION).insertOne(newUser);
-//     return NextResponse.json(
-//       { success: true, userId: result.insertedId },
-
-//       { status: 201 }
-//     );
-//   } catch (err) {
-//     console.error("POST /login error:", err);
-//     return NextResponse.json(
-//       { error: "Internal Server Error" },
-//       { status: 500 }
-//     );
-//   }
-// }
 
 export async function POST(req) {
   try {
