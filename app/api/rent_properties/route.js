@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import clientPromise from "../../lib/db";
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { generateAccessToken, generateRefreshToken } from "../../lib/jwt";
+//import { generateAccessToken, generateRefreshToken } from "../../lib/jwt";
 
 export async function GET(req) {
   try {

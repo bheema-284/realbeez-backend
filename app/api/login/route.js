@@ -3,102 +3,122 @@ import clientPromise from "../../lib/db";
 import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
-
 const COLLECTION = "users";
+// export async function POST(req) {
+//   try {
+//     const body = await req.json();
+//     const { email, mobile, password, name } = body;
+
+//     if (!email && !mobile) {
+//       return NextResponse.json(
+//         { error: "Either email or mobile is required" },
+//         { status: 400 }
+//       );
+//     }
+
+//     if (!password) {
+//       return NextResponse.json(
+//         { error: "Password is required" },
+//         { status: 400 }
+//       );
+//     }
+
+//     const client = await clientPromise;
+//     const db = client.db(process.env.MONGODB_DBNAME);
+
+//     const USERS_COLLECTION = "users";
+
+//     // Check existing user
+//     const existingUser = await db.collection(USERS_COLLECTION).findOne({
+//       $or: [{ email }, { mobile }],
+//     });
+
+//     if (existingUser) {
+//       return NextResponse.json(
+//         { error: "User already exists with this email or mobile" },
+//         { status: 400 }
+//       );
+//     }
+
+//     // Hash password
+//     const hashedPassword = await bcrypt.hash(password, 10);
+
+//     // Generate dynamic userId
+//     const dynamicUserId = Math.floor(1000000 + Math.random() * 9000000);
+
+//     // Create new user
+//     const newUser = {
+//       userId: dynamicUserId,
+//       name: name || "",
+//       email: email || "",
+//       mobile: mobile || "",
+//       password: hashedPassword,
+//       createdAt: new Date(),
+//       updatedAt: new Date(),
+//     };
+
+//     // Insert user
+//     const result = await db.collection(USERS_COLLECTION).insertOne(newUser);
+
+//     // Return response
+//     return NextResponse.json(
+//       {
+//         success: true,
+//         message: "User registered successfully",
+//         userId: result.insertedId,
+//         dynamicUserId,
+//       },
+//       { status: 201 }
+//     );
+//   } catch (err) {
+//     console.error("POST /register error:", err);
+//     return NextResponse.json(
+//       { error: "Internal Server Error", details: err.message },
+//       { status: 500 }
+//     );
+//   }
+// }
 
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { email, mobile, password, name } = body;
-
-    if (!email && !mobile) {
+    const { mobile } = body;
+    if (!mobile) {
       return NextResponse.json(
-        { error: "Either email or mobile is required" },
+        { error: "Mobile number is required" },
         { status: 400 }
       );
     }
-
-    if (!password) {
-      return NextResponse.json(
-        { error: "Password is required" },
-        { status: 400 }
-      );
-    }
-
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
+    const user = await db.collection(COLLECTION).findOne({ mobile });
 
-    const USERS_COLLECTION = "users";
-    const TOKENS_COLLECTION = "user_tokens";
-
-    // Check existing user
-    const existingUser = await db.collection(USERS_COLLECTION).findOne({
-      $or: [{ email }, { mobile }],
-    });
-
-    if (existingUser) {
+    if (!user) {
       return NextResponse.json(
-        { error: "User already exists with this email or mobile" },
-        { status: 400 }
+        { error: "User not found. Please register first." },
+        { status: 404 }
       );
     }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Generate dynamic userId
-    const dynamicUserId = Math.floor(1000000 + Math.random() * 9000000);
-
-    // Create new user
-    const newUser = {
-      userId: dynamicUserId,
-      name: name || "",
-      email: email || "",
-      mobile: mobile || "",
-      password: hashedPassword,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    // Insert user
-    const result = await db.collection(USERS_COLLECTION).insertOne(newUser);
-
-    // Generate JWT tokens
-    const secret = process.env.JWT_SECRET || "vinod@123";
-    const accessToken = jwt.sign({ sub: result.insertedId, email }, secret, {
-      expiresIn: "15m",
-    });
-    const refreshToken = jwt.sign({ sub: result.insertedId }, secret, {
-      expiresIn: "7d",
-    });
-
-    // ✅ Store tokens in a new collection
-    const newTokens = {
-      userId: result.insertedId,
-      mobile: mobile || "",
-      email: email || "",
-      accessToken,
-      refreshToken,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    await db.collection(TOKENS_COLLECTION).insertOne(newTokens);
-
-    // Return response
+    const otp = "1234";
+    await db.collection(COLLECTION).updateOne(
+      { mobile },
+      {
+        $set: {
+          otp,
+          otpCreatedAt: new Date(),
+        },
+      }
+    );
     return NextResponse.json(
       {
         success: true,
-        message: "User registered successfully",
-        userId: result.insertedId,
-        dynamicUserId,
-        accessToken,
-        refreshToken,
+        message: "OTP sent successfully",
+        otp,
       },
-      { status: 201 }
+      { status: 200 }
     );
   } catch (err) {
-    console.error("POST /register error:", err);
+    console.error("POST /login error:", err);
     return NextResponse.json(
       { error: "Internal Server Error", details: err.message },
       { status: 500 }

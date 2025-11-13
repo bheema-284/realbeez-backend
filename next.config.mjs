@@ -1,7 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   api: {
-    bodyParser: false, // disable Next.js default body parsing
+    bodyParser: false,
+    matcher: "/api/:path*",
   },
 };
 

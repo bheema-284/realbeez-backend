@@ -3,38 +3,9 @@ import bcrypt from "bcrypt";
 import clientPromise from "../../lib/db";
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { generateAccessToken, generateRefreshToken } from "../../lib/jwt";
+//import { generateAccessToken, generateRefreshToken } from "../../lib/jwt";
+import jwt from "jsonwebtoken";
 
-// // export async function POST(req) {
-// //   try {
-// //     const data = await req.json();
-// //     const client = await clientPromise;
-// //     const db = client.db(process.env.MONGODB_DBNAME);
-
-// //     // Insert document
-// //     const result = await db.collection("site_visits").insertOne({
-// //       ...data,
-// //       status: data.status || "Scheduled",
-// //       createdAt: new Date(),
-// //       updatedAt: new Date(),
-// //     });
-
-// //     // Generate visitId from _id
-// //     const visitId = result.insertedId.toString();
-
-// //     await db
-// //       .collection("site_visits")
-// //       .updateOne({ _id: result.insertedId }, { $set: { visitId } });
-
-// //     return NextResponse.json({ success: true, visitId }, { status: 201 });
-// //   } catch (error) {
-// //     console.error("POST Error:", error);
-// //     return NextResponse.json(
-// //       { error: "Internal Server Error" },
-// //       { status: 500 }
-// //     );
-// //   }
-// }
 export async function POST(req) {
   try {
     const body = await req.json();
