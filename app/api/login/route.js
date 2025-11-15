@@ -4,81 +4,6 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 const COLLECTION = "users";
-// export async function POST(req) {
-//   try {
-//     const body = await req.json();
-//     const { email, mobile, password, name } = body;
-
-//     if (!email && !mobile) {
-//       return NextResponse.json(
-//         { error: "Either email or mobile is required" },
-//         { status: 400 }
-//       );
-//     }
-
-//     if (!password) {
-//       return NextResponse.json(
-//         { error: "Password is required" },
-//         { status: 400 }
-//       );
-//     }
-
-//     const client = await clientPromise;
-//     const db = client.db(process.env.MONGODB_DBNAME);
-
-//     const USERS_COLLECTION = "users";
-
-//     // Check existing user
-//     const existingUser = await db.collection(USERS_COLLECTION).findOne({
-//       $or: [{ email }, { mobile }],
-//     });
-
-//     if (existingUser) {
-//       return NextResponse.json(
-//         { error: "User already exists with this email or mobile" },
-//         { status: 400 }
-//       );
-//     }
-
-//     // Hash password
-//     const hashedPassword = await bcrypt.hash(password, 10);
-
-//     // Generate dynamic userId
-//     const dynamicUserId = Math.floor(1000000 + Math.random() * 9000000);
-
-//     // Create new user
-//     const newUser = {
-//       userId: dynamicUserId,
-//       name: name || "",
-//       email: email || "",
-//       mobile: mobile || "",
-//       password: hashedPassword,
-//       createdAt: new Date(),
-//       updatedAt: new Date(),
-//     };
-
-//     // Insert user
-//     const result = await db.collection(USERS_COLLECTION).insertOne(newUser);
-
-//     // Return response
-//     return NextResponse.json(
-//       {
-//         success: true,
-//         message: "User registered successfully",
-//         userId: result.insertedId,
-//         dynamicUserId,
-//       },
-//       { status: 201 }
-//     );
-//   } catch (err) {
-//     console.error("POST /register error:", err);
-//     return NextResponse.json(
-//       { error: "Internal Server Error", details: err.message },
-//       { status: 500 }
-//     );
-//   }
-// }
-
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -100,15 +25,7 @@ export async function POST(req) {
       );
     }
     const otp = "1234";
-    await db.collection(COLLECTION).updateOne(
-      { mobile },
-      {
-        $set: {
-          otp,
-          otpCreatedAt: new Date(),
-        },
-      }
-    );
+    await db.collection(COLLECTION).updateOne({ mobile });
     return NextResponse.json(
       {
         success: true,
@@ -134,7 +51,6 @@ export async function GET(req) {
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
-
     let users;
 
     if (email) {
@@ -144,7 +60,6 @@ export async function GET(req) {
     } else {
       users = await db.collection(COLLECTION).find({}).toArray();
     }
-
     return NextResponse.json({ success: true, users });
   } catch (err) {
     console.error("GET /login error:", err);
@@ -154,8 +69,6 @@ export async function GET(req) {
     );
   }
 }
-
-// 🟡 PUT — Update user password or profile
 export async function PUT(req) {
   try {
     const { id, name, email, mobile, password } = await req.json();
@@ -166,23 +79,18 @@ export async function PUT(req) {
         { status: 400 }
       );
     }
-
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
-
     const updateData = {};
     if (name) updateData.name = name;
     if (email) updateData.email = email;
     if (mobile) updateData.mobile = mobile;
     if (password) updateData.password = await bcrypt.hash(password, 10);
-
     const result = await db
       .collection(COLLECTION)
       .updateOne({ _id: new ObjectId(id) }, { $set: updateData });
-
     if (result.modifiedCount === 0)
       return NextResponse.json({ error: "No changes made" }, { status: 400 });
-
     return NextResponse.json({ success: true, message: "User updated" });
   } catch (err) {
     console.error("PUT /login error:", err);
@@ -192,25 +100,18 @@ export async function PUT(req) {
     );
   }
 }
-
-// 🔴 DELETE — Delete user
 export async function DELETE(req) {
   try {
     const { id } = await req.json();
-
     if (!id)
       return NextResponse.json({ error: "User ID required" }, { status: 400 });
-
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
-
     const result = await db.collection(COLLECTION).deleteOne({
       _id: new ObjectId(id),
     });
-
     if (result.deletedCount === 0)
       return NextResponse.json({ error: "User not found" }, { status: 404 });
-
     return NextResponse.json({ success: true, message: "User deleted" });
   } catch (err) {
     console.error("DELETE /login error:", err);
