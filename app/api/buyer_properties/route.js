@@ -3,14 +3,9 @@ import bcrypt from "bcrypt";
 import clientPromise from "../../lib/db";
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-// ✅ Validation schema
-
-// ✅ GET – list all properties
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-
-    // Extract and filter query parameters
     const query = {};
     [
       "propertyId",
@@ -21,7 +16,6 @@ export async function GET(req) {
     ].forEach((key) => {
       const value = searchParams.get(key);
       if (value) {
-        // Case-insensitive regex search
         query[key] = { $regex: new RegExp(value, "i") };
       }
     });
@@ -40,25 +34,17 @@ export async function GET(req) {
     );
   }
 }
-
-// ✅ POST – create a property
 export async function POST(req) {
   try {
     const data = await req.json();
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
-
-    // Insert document first so MongoDB generates _id
     const result = await db.collection("buyer_properties").insertOne({
       ...data,
       createdAt: new Date(),
     });
-
-    // ✅ Set propertyId = _id (as string)
     const propertyId = result.insertedId.toString();
-
-    // Update the document with the new propertyId
     await db
       .collection("buyer_properties")
       .updateOne({ _id: result.insertedId }, { $set: { propertyId } });
@@ -79,7 +65,6 @@ export async function POST(req) {
 }
 export async function DELETE(req) {
   try {
-    //alert("hi");
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
@@ -92,8 +77,6 @@ export async function DELETE(req) {
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
-
-    // ✅ Convert id string to Mongo ObjectId
     const result = await db
       .collection("buyer_properties")
       .deleteOne({ _id: new ObjectId(id) });
@@ -117,8 +100,6 @@ export async function DELETE(req) {
     );
   }
 }
-
-// ✅ PUT - Update a record by ID
 export async function PUT(req) {
   try {
     const data = await req.json();

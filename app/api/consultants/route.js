@@ -6,14 +6,12 @@ import { ObjectId } from "mongodb";
 
 const COLLECTION = "consultants";
 
-// helper to parse int with bounds
 const parseIntBounded = (value, fallback, min = -Infinity, max = Infinity) => {
   const n = parseInt(value ?? "", 10);
   if (Number.isNaN(n)) return fallback;
   return Math.min(Math.max(n, min), max);
 };
 
-// ======================== CREATE (POST) ========================
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -49,7 +47,6 @@ export async function POST(req) {
   }
 }
 
-// ======================== GET ALL (GET) ========================
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -68,7 +65,6 @@ export async function GET(req) {
       }
     }
 
-    // String filters (case-insensitive, partial match)
     const name = searchParams.get("name");
     if (name) query.name = { $regex: name, $options: "i" };
 
@@ -82,7 +78,6 @@ export async function GET(req) {
     if (specialization)
       query.specialization = { $regex: specialization, $options: "i" };
 
-    // Numeric range filters for experienceYears
     const minExperienceRaw = searchParams.get("minExperience");
     const maxExperienceRaw = searchParams.get("maxExperience");
     const minExperience =
@@ -238,8 +233,9 @@ export async function PUT(req) {
 export async function DELETE(req) {
   try {
     const { searchParams } = new URL(req.url);
-    // support single id or comma-separated ids
     const idsParam = searchParams.get("id");
+
+    // Validate ID parameter
     if (!idsParam) {
       return NextResponse.json(
         { error: "Consultant ID is required" },
@@ -247,50 +243,81 @@ export async function DELETE(req) {
       );
     }
 
+    // Parse and validate IDs
     const ids = idsParam
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
+    if (ids.length === 0) {
+      return NextResponse.json(
+        { error: "No valid IDs provided" },
+        { status: 400 }
+      );
+    }
+
     const objectIds = [];
-    for (const i of ids) {
-      try {
-        objectIds.push(new ObjectId(i));
-      } catch (e) {
+    for (const id of ids) {
+      // More robust ObjectId validation
+      if (!ObjectId.isValid(id)) {
         return NextResponse.json(
-          { error: `Invalid ID: ${i}` },
+          { error: `Invalid ID format: ${id}` },
           { status: 400 }
         );
       }
+      objectIds.push(new ObjectId(id));
     }
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
 
     let result;
+    let message;
+
     if (objectIds.length === 1) {
       result = await db.collection(COLLECTION).deleteOne({ _id: objectIds[0] });
+
       if (result.deletedCount === 0) {
         return NextResponse.json(
           { error: "Consultant not found" },
           { status: 404 }
         );
       }
+      message = "Consultant deleted successfully";
     } else {
-      result = await db
-        .collection(COLLECTION)
-        .deleteMany({ _id: { $in: objectIds } });
+      result = await db.collection(COLLECTION).deleteMany({
+        _id: { $in: objectIds },
+      });
+
+      // Check if any documents were actually deleted
+      if (result.deletedCount === 0) {
+        return NextResponse.json(
+          { error: "No consultants found with the provided IDs" },
+          { status: 404 }
+        );
+      }
+
+      message = `${result.deletedCount} consultant(s) deleted successfully`;
     }
 
     return NextResponse.json(
       {
         success: true,
-        message: "Consultant(s) deleted",
+        message,
         deletedCount: result.deletedCount,
       },
       { status: 200 }
     );
   } catch (err) {
     console.error("DELETE Error:", err);
+
+    // More specific error handling
+    if (err.name === "MongoError" || err.name === "MongoServerError") {
+      return NextResponse.json(
+        { error: "Database error occurred" },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 }

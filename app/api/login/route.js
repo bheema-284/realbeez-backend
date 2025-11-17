@@ -4,18 +4,22 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 const COLLECTION = "users";
+
 export async function POST(req) {
   try {
     const body = await req.json();
     const { mobile } = body;
+
     if (!mobile) {
       return NextResponse.json(
         { error: "Mobile number is required" },
         { status: 400 }
       );
     }
+
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
+
     const user = await db.collection(COLLECTION).findOne({ mobile });
 
     if (!user) {
@@ -24,8 +28,21 @@ export async function POST(req) {
         { status: 404 }
       );
     }
+
+    // Static OTP
     const otp = "1234";
-    await db.collection(COLLECTION).updateOne({ mobile });
+
+    // ✅ Store OTP in database
+    await db.collection(COLLECTION).updateOne(
+      { mobile },
+      {
+        $set: {
+          otp: otp,
+          otpCreatedAt: new Date(),
+        },
+      }
+    );
+
     return NextResponse.json(
       {
         success: true,
@@ -51,6 +68,7 @@ export async function GET(req) {
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
+
     let users;
 
     if (email) {
@@ -60,6 +78,7 @@ export async function GET(req) {
     } else {
       users = await db.collection(COLLECTION).find({}).toArray();
     }
+
     return NextResponse.json({ success: true, users });
   } catch (err) {
     console.error("GET /login error:", err);
@@ -69,6 +88,8 @@ export async function GET(req) {
     );
   }
 }
+
+// 🟡 PUT — Update user password or profile
 export async function PUT(req) {
   try {
     const { id, name, email, mobile, password } = await req.json();
@@ -79,18 +100,23 @@ export async function PUT(req) {
         { status: 400 }
       );
     }
+
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
+
     const updateData = {};
     if (name) updateData.name = name;
     if (email) updateData.email = email;
     if (mobile) updateData.mobile = mobile;
     if (password) updateData.password = await bcrypt.hash(password, 10);
+
     const result = await db
       .collection(COLLECTION)
       .updateOne({ _id: new ObjectId(id) }, { $set: updateData });
+
     if (result.modifiedCount === 0)
       return NextResponse.json({ error: "No changes made" }, { status: 400 });
+
     return NextResponse.json({ success: true, message: "User updated" });
   } catch (err) {
     console.error("PUT /login error:", err);
@@ -100,18 +126,25 @@ export async function PUT(req) {
     );
   }
 }
+
+// 🔴 DELETE — Delete user
 export async function DELETE(req) {
   try {
     const { id } = await req.json();
+
     if (!id)
       return NextResponse.json({ error: "User ID required" }, { status: 400 });
+
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
+
     const result = await db.collection(COLLECTION).deleteOne({
       _id: new ObjectId(id),
     });
+
     if (result.deletedCount === 0)
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+
     return NextResponse.json({ success: true, message: "User deleted" });
   } catch (err) {
     console.error("DELETE /login error:", err);

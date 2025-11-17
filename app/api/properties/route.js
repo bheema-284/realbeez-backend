@@ -4,37 +4,28 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 
-// GET /api/properties
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-
     const name = searchParams.get("name");
     const title = searchParams.get("title");
     const city = searchParams.get("city");
     const minPrice = parseFloat(searchParams.get("minPrice"));
     const maxPrice = parseFloat(searchParams.get("maxPrice"));
-    const q = searchParams.get("q"); // general search query
+    const q = searchParams.get("q");
 
-    // Connect to MongoDB
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
-
-    // Build MongoDB filter dynamically
     const filter = {};
 
     if (name) filter.name = { $regex: name, $options: "i" };
     if (title) filter.title = { $regex: title, $options: "i" };
     if (city) filter.city = { $regex: city, $options: "i" };
-
-    // Add price range filter if provided
     if (!isNaN(minPrice) || !isNaN(maxPrice)) {
       filter.price = {};
       if (!isNaN(minPrice)) filter.price.$gte = minPrice;
       if (!isNaN(maxPrice)) filter.price.$lte = maxPrice;
     }
-
-    // Add generic search query (q)
     if (q) {
       const regex = new RegExp(q, "i");
       filter.$or = [
@@ -44,11 +35,7 @@ export async function GET(request) {
         { city: { $regex: regex } },
       ];
     }
-
-    // Fetch filtered results directly from MongoDB
     const properties = await db.collection("vinodapi").find(filter).toArray();
-
-    // Return results
     return new Response(JSON.stringify(properties), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -61,13 +48,9 @@ export async function GET(request) {
     });
   }
 }
-
-// POST /api/properties
 export async function POST(request) {
   try {
     const body = await request.json();
-
-    // Define Joi validation schema
     const schema = Joi.object({
       title: Joi.string().min(3).max(100).required(),
       description: Joi.string().max(500).optional(),
@@ -112,8 +95,6 @@ export async function POST(request) {
         })
       ),
     });
-
-    // Validate body
     const { error, value } = schema.validate(body);
     if (error) {
       return Response.json(
@@ -121,18 +102,13 @@ export async function POST(request) {
         { status: 400 }
       );
     }
-
-    // Connect to MongoDB
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
-
-    // Insert into collection
     const result = await db.collection("vinodapi").insertOne({
       ...value,
       created_at: new Date(),
       updated_at: new Date(),
     });
-
     return Response.json(
       {
         message: "Property added successfully!",
@@ -145,8 +121,6 @@ export async function POST(request) {
     return Response.json({ error: error.message }, { status: 500 });
   }
 }
-
-// You can add PUT, DELETE handlers similarly if needed
 export async function PUT(request) {
   try {
     const data = await request.json();
@@ -185,15 +159,11 @@ export async function DELETE(req) {
         { status: 400 }
       );
     }
-
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
-
-    // ✅ Convert id string to Mongo ObjectId
     const result = await db
       .collection("vinodapi")
       .deleteOne({ _id: new ObjectId(id) });
-
     if (result.deletedCount === 0) {
       return NextResponse.json({ error: "id not found" }, { status: 404 });
     }
