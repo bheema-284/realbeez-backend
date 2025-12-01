@@ -136,18 +136,22 @@ export async function POST(req) {
     }
     const db = client.db(dbName);
 
-    await db.collection("cab_services").insertOne({
+    const result = await db.collection("cab_services").insertOne({
       passenger_count: Number(passenger_count),
       booking_date,
       booking_time,
       pickup_location,
       drop_location,
-      status, //booked or canceled or rescheduled
-      //createdAt: new Date(),
+      status, // booked | canceled | rescheduled
+      createdAt: new Date(),
     });
 
+    // Return success + inserted ID
     return NextResponse.json(
-      { message: "Cab service added successfully" },
+      {
+        message: "Cab service added successfully",
+        id: result.insertedId.toString(),
+      },
       { status: 201 }
     );
   } catch (error) {
