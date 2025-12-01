@@ -10,7 +10,6 @@ export async function POST(req) {
   try {
     const body = await req.json();
     const { mobile } = body;
-
     if (!mobile) {
       return NextResponse.json(
         { error: "Either email or mobile is required" },
@@ -48,7 +47,7 @@ export async function POST(req) {
       name: name || "",
       email: email || "",
       mobile: mobile || "",
-      password: hashedPassword,
+      password: password || "",
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -69,6 +68,8 @@ export async function POST(req) {
     const newTokens = {
       userId: result.insertedId,
       mobile: mobile || "",
+      password: password || "",
+      email: email || "",
       accessToken,
       refreshToken,
       createdAt: new Date(),
