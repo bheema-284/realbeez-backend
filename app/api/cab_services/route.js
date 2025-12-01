@@ -68,6 +68,10 @@ export async function POST(req) {
       drop_location,
       status,
     } = body;
+
+    // ---------------------------
+    // PASSENGER COUNT VALIDATION
+    // ---------------------------
     if (
       passenger_count === undefined ||
       passenger_count === "" ||
@@ -80,6 +84,7 @@ export async function POST(req) {
     }
 
     const pcNum = Number(passenger_count);
+
     if (!Number.isInteger(pcNum)) {
       return NextResponse.json(
         { error: "Passenger count must be an integer" },
@@ -94,6 +99,9 @@ export async function POST(req) {
       );
     }
 
+    // ---------------------------
+    // REQUIRED FIELDS
+    // ---------------------------
     if (!booking_date) {
       return NextResponse.json(
         { error: "Booking date is required" },
@@ -123,10 +131,26 @@ export async function POST(req) {
     }
 
     // ---------------------------
-    // INSERT INTO DB
+    // STATUS VALIDATION
+    // ---------------------------
+    const allowedStatus = ["booked", "rescheduled", "cancelled"];
+
+    if (!status || !allowedStatus.includes(status)) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid status. Allowed statuses: booked, rescheduled, cancelled",
+        },
+        { status: 400 }
+      );
+    }
+
+    // ---------------------------
+    // INSERT INTO DATABASE
     // ---------------------------
     const client = await clientPromise;
     const dbName = process.env.MONGODB_DBNAME || process.env.MONGODB_DB_NAME;
+
     if (!dbName) {
       console.error("POST Error: MONGODB_DBNAME not configured");
       return NextResponse.json(
@@ -134,19 +158,19 @@ export async function POST(req) {
         { status: 500 }
       );
     }
+
     const db = client.db(dbName);
 
     const result = await db.collection("cab_services").insertOne({
-      passenger_count: Number(passenger_count),
+      passenger_count: pcNum,
       booking_date,
       booking_time,
       pickup_location,
       drop_location,
-      status, // booked | canceled | rescheduled
-      createdAt: new Date(),
+      status, // must be one of allowedStatus
     });
 
-    // Return success + inserted ID
+    // Success Response
     return NextResponse.json(
       {
         message: "Cab service added successfully",
