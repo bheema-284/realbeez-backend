@@ -6,11 +6,11 @@ import { NextResponse } from "next/server"; // ✅ correct import
 
 const userPostSchema = Joi.object({
   name: Joi.string().min(2).max(50).required(),
-  role: Joi.string().valid("user", "admin").default("user").optional(),
+  role: Joi.string().valid("user", "admin").default("user").required(),
   date_of_birth: Joi.string()
     .pattern(/^\d{2}-\d{2}-\d{4}$/)
-    .optional(),
-  gender: Joi.string().valid("male", "female", "other").optional(),
+    .required(),
+  gender: Joi.string().valid("male", "female", "other").required(),
   password: Joi.string().min(6).required(),
   email: Joi.string().email(),
   mobile: Joi.string().pattern(/^[6-9]\d{9}$/),
