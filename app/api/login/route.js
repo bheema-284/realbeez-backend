@@ -20,7 +20,7 @@ export async function POST(req) {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DBNAME);
 
-    const user = await db.collection(COLLECTION).findOne({ mobile });
+    const user = { mobile };
 
     if (!user) {
       return NextResponse.json(
