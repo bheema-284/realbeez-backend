@@ -1,182 +1,140 @@
-import Joi from "joi";
-import clientPromise from "../../lib/db";
+import clientPromise from "@/app/lib/db";
+import { postSchema } from "./schema";
 import { ObjectId } from "mongodb";
-import { NextResponse } from "next/server";
-import bcrypt from "bcrypt";
 
 export async function GET(request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const name = searchParams.get("name");
-    const title = searchParams.get("title");
-    const city = searchParams.get("city");
-    const minPrice = parseFloat(searchParams.get("minPrice"));
-    const maxPrice = parseFloat(searchParams.get("maxPrice"));
-    const q = searchParams.get("q");
+    try {
+        const client = await clientPromise;
+        const db = client.db(process.env.MONGODB_DBNAME);
 
-    const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DBNAME);
-    const filter = {};
+        const { searchParams } = new URL(request.url);
+        const id = searchParams.get("id");
+        const search = searchParams.get("search");
 
-    if (name) filter.name = { $regex: name, $options: "i" };
-    if (title) filter.title = { $regex: title, $options: "i" };
-    if (city) filter.city = { $regex: city, $options: "i" };
-    if (!isNaN(minPrice) || !isNaN(maxPrice)) {
-      filter.price = {};
-      if (!isNaN(minPrice)) filter.price.$gte = minPrice;
-      if (!isNaN(maxPrice)) filter.price.$lte = maxPrice;
+        if (id) {
+            if (!ObjectId.isValid(id))
+                return Response.json({ error: "Invalid property ID format" }, { status: 400 });
+
+            const property = await db.collection("properties").findOne({ _id: new ObjectId(id) });
+            if (!property)
+                return Response.json({ error: "Property not found" }, { status: 404 });
+
+            return Response.json(property);
+        }
+
+        // ✅ Handle search by title or type
+        let query = {};
+        if (search && search.trim() !== "") {
+            const regex = new RegExp(search, "i");
+            query = { $or: [{ title: regex }, { type: regex }] };
+        }
+
+        const properties = await db.collection("properties").find(query).toArray();
+
+        return Response.json(properties);
+    } catch (error) {
+        console.error("Error in GET /api/properties:", error);
+        return Response.json({ error: error.message }, { status: 500 });
     }
-    if (q) {
-      const regex = new RegExp(q, "i");
-      filter.$or = [
-        { name: { $regex: regex } },
-        { title: { $regex: regex } },
-        { description: { $regex: regex } },
-        { city: { $regex: regex } },
-      ];
-    }
-    const properties = await db.collection("vinodapi").find(filter).toArray();
-    return new Response(JSON.stringify(properties), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("Error fetching data:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
 }
-export async function POST(request) {
-  try {
-    const body = await request.json();
-    const schema = Joi.object({
-      title: Joi.string().min(3).max(100).required(),
-      description: Joi.string().max(500).optional(),
-      type: Joi.string()
-        .valid("apartment", "villa", "plot", "commercial")
-        .required(),
-      status: Joi.string()
-        .valid("ready_to_move", "under_construction", "sold")
-        .required(),
-      price: Joi.number().positive().required(),
-      currency: Joi.string().default("INR"),
-      area_sq_ft: Joi.number().positive().optional(),
-      bedrooms: Joi.number().optional(),
-      bathrooms: Joi.number().optional(),
-      furnishing: Joi.string().optional(),
-      amenities: Joi.array().items(Joi.string()).optional(),
-      rera_no: Joi.string().optional(),
-      block: Joi.string().optional(),
-      no_of_units: Joi.number().optional(),
-      no_of_floors: Joi.number().optional(),
-      floor_no: Joi.number().optional(),
-      flat_no: Joi.string().optional(),
-      address: Joi.object({
-        locality: Joi.string(),
-        area: Joi.string(),
-        city: Joi.string(),
-        state: Joi.string(),
-        country: Joi.string(),
-        latitude: Joi.number(),
-        longitude: Joi.number(),
-      }),
-      images: Joi.array().items(
-        Joi.object({
-          orientation: Joi.string(),
-          image: Joi.string().uri(),
-        })
-      ),
-      videos: Joi.array().items(
-        Joi.object({
-          orientation: Joi.string(),
-          video: Joi.string().uri(),
-        })
-      ),
-    });
-    const { error, value } = schema.validate(body);
-    if (error) {
-      return Response.json(
-        { error: error.details[0].message },
-        { status: 400 }
-      );
+
+
+export async function POST(req) {
+    try {
+        const body = await req.json();
+
+        // Validate request body
+        const { error, value } = postSchema.validate(body);
+        if (error) {
+            return new Response(
+                JSON.stringify({ error: error.details[0].message }),
+                { status: 400, headers: { "Content-Type": "application/json" } }
+            );
+        }
+
+        // Insert into MongoDB
+        const client = await clientPromise;
+        const db = client.db(process.env.MONGODB_DBNAME);
+        const result = await db.collection("properties").insertOne(value);
+
+        return new Response(
+            JSON.stringify({ message: "Property created successfully", insertedId: result.insertedId }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+    } catch (err) {
+        return new Response(
+            JSON.stringify({ error: err.message }),
+            { status: 500, headers: { "Content-Type": "application/json" } }
+        );
     }
-    const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DBNAME);
-    const result = await db.collection("vinodapi").insertOne({
-      ...value,
-      created_at: new Date(),
-      updated_at: new Date(),
-    });
-    return Response.json(
-      {
-        message: "Property added successfully!",
-        insertedId: result.insertedId,
-      },
-      { status: 201 }
-    );
-  } catch (error) {
-    console.error("Error inserting property:", error);
-    return Response.json({ error: error.message }, { status: 500 });
-  }
 }
-export async function PUT(request) {
-  try {
-    const data = await request.json();
-    const { _id, ...updateData } = data;
 
-    if (!_id) {
-      return new Response(JSON.stringify({ error: "Missing _id" }), {
-        status: 400,
-      });
+export async function PUT(req) {
+    try {
+        const body = await req.json();
+
+        // Check if _id is provided
+        if (!body._id) {
+            return Response.json({ error: "Property ID is required for update" }, { status: 400 });
+        }
+
+        // Validate ObjectId format
+        if (!ObjectId.isValid(body._id)) {
+            return Response.json({ error: "Invalid property ID format" }, { status: 400 });
+        }
+
+        // Extract _id and separate it from update data
+        const { _id, ...updateData } = body;
+
+        // Validate request body with stripUnknown: true to remove unknown fields
+        const { error, value } = postSchema.validate(updateData, { stripUnknown: true });
+
+        if (error) {
+            return Response.json({ error: error.details[0].message }, { status: 400 });
+        }
+
+        // Connect to MongoDB
+        const client = await clientPromise;
+        const db = client.db(process.env.MONGODB_DBNAME);
+
+        // Update the property
+        const result = await db.collection("properties").updateOne(
+            { _id: new ObjectId(_id) },
+            { $set: value }
+        );
+
+        if (result.matchedCount === 0) {
+            return Response.json({ error: "Property not found" }, { status: 404 });
+        }
+
+        return Response.json({
+            message: "Property updated successfully",
+            modifiedCount: result.modifiedCount
+        }, { status: 200 });
+    } catch (err) {
+        console.error("Error in PUT /api/properties:", err);
+        return Response.json({ error: err.message }, { status: 500 });
     }
-
-    const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DBNAME);
-
-    await db
-      .collection("vinodapi")
-      .updateOne({ _id: new ObjectId(_id) }, { $set: updateData });
-
-    return new Response(JSON.stringify({ message: "Updated successfully" }), {
-      status: 200,
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-    });
-  }
 }
 export async function DELETE(req) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json(
-        { error: "Missing id parameter" },
-        { status: 400 }
-      );
-    }
-    const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DBNAME);
-    const result = await db
-      .collection("vinodapi")
-      .deleteOne({ _id: new ObjectId(id) });
-    if (result.deletedCount === 0) {
-      return NextResponse.json({ error: "id not found" }, { status: 404 });
-    }
-
-    return NextResponse.json(
-      { message: "id deleted successfully" },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error("DELETE Error:", error);
-    return NextResponse.json(
-      { error: error.message || "Internal Server Error" },
-      { status: 500 }
-    );
-  }
+    try {
+        const { searchParams } = new URL(req.url);
+        const id = searchParams.get("id");  
+        if (!id) {
+            return Response.json({ error: "Property ID is required for deletion" }, { status: 400 });
+        }
+        if (!ObjectId.isValid(id)) {
+            return Response.json({ error: "Invalid property ID format" }, { status: 400 });
+        }
+        const client = await clientPromise;
+        const db = client.db(process.env.MONGODB_DBNAME);
+        const result = await db.collection("properties").deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 0) {
+            return Response.json({ error: "Property not found" }, { status: 404 });
+        }   
+        return Response.json({ message: "Property deleted successfully" }, { status: 200 });
+    } catch (err) {
+        console.error("Error in DELETE /api/properties:", err);
+        return Response.json({ error: err.message }, { status: 500 });
+    } 
 }
