@@ -1,216 +1,229 @@
-import Joi from "joi";
-import bcrypt from "bcrypt";
-import clientPromise from "../../lib/db";
 import { NextResponse } from "next/server";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { v4 as uuidv4 } from "uuid";
+import clientPromise from "@/app/lib/db";
+import s3 from "@/app/lib/s3";
 import { ObjectId } from "mongodb";
-//import { v2 as cloudinary } from "cloudinary";
-
-// cloudinary.config({
-//   cloud_name: "daazxssgy",
-//   api_key: "495613556329435",
-//   api_secret: "1HX8Xb4NtDaGHs7r689u_HIsNHs",
-// });
-
-const createSchema = Joi.object({
-  title: Joi.string().required(),
-  description: Joi.string().allow("").optional(),
-  imageBase64: Joi.string()
-    .uri({ scheme: [/^data:/] })
-    .optional(),
-  imageUrl: Joi.string().uri().optional(),
-});
-
-const updateSchema = Joi.object({
-  id: Joi.string().required(),
-  title: Joi.string().optional(),
-  description: Joi.string().allow("").optional(),
-  imageBase64: Joi.string()
-    .uri({ scheme: [/^data:/] })
-    .optional(),
-  imageUrl: Joi.string().uri().optional(),
-});
-
-async function getCollection() {
-  const client = await clientPromise;
-  const db = client.db();
-  return db.collection("media_uploads");
-}
-
-export async function GET(req) {
-  try {
-    const url = new URL(req.url);
-    const id = url.searchParams.get("id");
-    const collection = await getCollection();
-
-    if (id) {
-      if (!ObjectId.isValid(id)) {
-        return NextResponse.json({ error: "Invalid id" }, { status: 400 });
-      }
-      const doc = await collection.findOne({ _id: new ObjectId(id) });
-      if (!doc)
-        return NextResponse.json({ error: "Not found" }, { status: 404 });
-      return NextResponse.json(doc);
-    }
-
-    // Pagination params (optional)
-    const limit = Math.min(
-      100,
-      parseInt(url.searchParams.get("limit") || "25", 10)
-    );
-    const page = Math.max(0, parseInt(url.searchParams.get("page") || "0", 10));
-    const docs = await collection
-      .find({})
-      .sort({ createdAt: -1 })
-      .skip(page * limit)
-      .limit(limit)
-      .toArray();
-    return NextResponse.json(docs);
-  } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
-}
 
 export async function POST(req) {
-  try {
-    const body = await req.json();
-    const { error, value } = createSchema.validate(body, {
-      allowUnknown: false,
-    });
-    if (error)
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    try {
+        const formData = await req.formData();
 
-    const { title, description, imageBase64, imageUrl } = value;
+        /* ---------- GET & VALIDATE PROPERTY ID ---------- */
+        const propertyId = formData.get("id");
 
-    if (!imageBase64 && !imageUrl) {
-      return NextResponse.json(
-        { error: "Either imageBase64 or imageUrl is required" },
-        { status: 400 }
-      );
+        if (!propertyId) {
+            return NextResponse.json(
+                { error: "Property id is required" },
+                { status: 400 }
+            );
+        }
+
+        if (!ObjectId.isValid(propertyId)) {
+            return NextResponse.json(
+                { error: "Invalid property id" },
+                { status: 400 }
+            );
+        }
+
+        /* ---------- GET FILE & META ---------- */
+        const file = formData.get("url"); // image file
+        const direction = formData.get("direction") || null;
+        const aspect_ratio = formData.get("aspect_ratio") || null;
+
+        if (!(file instanceof File) || file.size === 0) {
+            return NextResponse.json(
+                { error: "Image file is required" },
+                { status: 400 }
+            );
+        }
+
+        /* ---------- AWS CONFIG ---------- */
+        const bucket = process.env.AWS_BUCKET_NAME;
+        const region = process.env.AWS_REGION;
+
+        if (!bucket || !region) {
+            throw new Error("AWS configuration missing");
+        }
+
+        /* ---------- DB CONNECTION ---------- */
+        const client = await clientPromise;
+        const db = client.db(process.env.MONGODB_DBNAME);
+
+        /* ---------- CHECK PROPERTY EXISTS ---------- */
+        const existingProperty = await db.collection("properties").findOne({
+            _id: new ObjectId(propertyId),
+        });
+
+        if (!existingProperty) {
+            return NextResponse.json(
+                { error: "Property not found in properties collection" },
+                { status: 404 }
+            );
+        }
+
+        /* ---------- UPLOAD IMAGE TO S3 ---------- */
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const key = `properties/${propertyId}/${uuidv4()}-${file.name}`;
+
+        await s3.send(
+            new PutObjectCommand({
+                Bucket: bucket,
+                Key: key,
+                Body: buffer,
+                ContentType: file.type,
+            })
+        );
+
+        const imageData = {
+            id: new ObjectId(),
+            direction,
+            aspect_ratio,
+            url: `https://${bucket}.s3.${region}.amazonaws.com/${key}`
+        };
+
+        /* ---------- PUSH IMAGE INTO MONGODB ---------- */
+        const updateResult = await db.collection("properties").updateOne(
+            { _id: new ObjectId(propertyId) },
+            { $push: { images: imageData } }
+        );
+
+        if (updateResult.modifiedCount === 0) {
+            throw new Error("Failed to save image in MongoDB");
+        }
+
+        /* ---------- SUCCESS RESPONSE ---------- */
+        return NextResponse.json(
+            {
+                success: true,
+                message: "Image uploaded and saved successfully",
+                propertyId,
+                image: imageData,
+            },
+            { status: 200 }
+        );
+    } catch (error) {
+        console.error("UPLOAD ERROR:", error);
+
+        return NextResponse.json(
+            {
+                success: false,
+                error: error.message || "Image upload failed",
+            },
+            { status: 500 }
+        );
     }
-
-    // Upload to Cloudinary: prefer base64 if provided
-    const uploadSource = imageBase64 || imageUrl;
-    const uploadResult = await cloudinary.uploader.upload(uploadSource, {
-      folder: "realbeez_images",
-      resource_type: "image",
-    });
-
-    const doc = {
-      title,
-      description: description || "",
-      cloudinary: {
-        public_id: uploadResult.public_id,
-        url: uploadResult.secure_url,
-        width: uploadResult.width,
-        height: uploadResult.height,
-        format: uploadResult.format,
-      },
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    const collection = await getCollection();
-    const res = await collection.insertOne(doc);
-    doc._id = res.insertedId;
-    return NextResponse.json(doc, { status: 201 });
-  } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
 }
 
 export async function PUT(req) {
-  try {
-    const body = await req.json();
-    const { error, value } = updateSchema.validate(body, {
-      allowUnknown: false,
-    });
-    if (error)
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    try {
+        const formData = await req.formData();
 
-    const { id, title, description, imageBase64, imageUrl } = value;
-    if (!ObjectId.isValid(id))
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+        /* ---------- IDS ---------- */
+        const propertyId = formData.get("_id");
+        const imageId = formData.get("id");
 
-    const collection = await getCollection();
-    const existing = await collection.findOne({ _id: new ObjectId(id) });
-    if (!existing)
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-    const updateFields = {};
-    if (title !== undefined) updateFields.title = title;
-    if (description !== undefined) updateFields.description = description;
-
-    // If new image provided, upload new and delete old from Cloudinary
-    if (imageBase64 || imageUrl) {
-      const uploadSource = imageBase64 || imageUrl;
-      const uploadResult = await cloudinary.uploader.upload(uploadSource, {
-        folder: "realbeez_images",
-        resource_type: "image",
-      });
-
-      // delete previous image if present
-      if (existing.cloudinary && existing.cloudinary.public_id) {
-        try {
-          await cloudinary.uploader.destroy(existing.cloudinary.public_id, {
-            resource_type: "image",
-          });
-        } catch (e) {
-          // ignore Cloudinary delete errors
+        if (!ObjectId.isValid(propertyId) || !ObjectId.isValid(imageId)) {
+            return NextResponse.json(
+                { error: "Invalid propertyId or imageId" },
+                { status: 400 }
+            );
         }
-      }
 
-      updateFields.cloudinary = {
-        public_id: uploadResult.public_id,
-        url: uploadResult.secure_url,
-        width: uploadResult.width,
-        height: uploadResult.height,
-        format: uploadResult.format,
-      };
-    }
+        /* ---------- META FIELDS ---------- */
+        const direction = formData.get("direction");
+        const aspect_ratio = formData.get("aspect_ratio");
+        const file = formData.get("url"); // File input
 
-    updateFields.updatedAt = new Date();
+        /* ---------- AWS ---------- */
+        const bucket = process.env.AWS_BUCKET_NAME;
+        const region = process.env.AWS_REGION;
 
-    await collection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: updateFields }
-    );
-    const updated = await collection.findOne({ _id: new ObjectId(id) });
-    return NextResponse.json(updated);
-  } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
-}
+        if (!bucket || !region) {
+            throw new Error("AWS configuration missing");
+        }
 
-export async function DELETE(req) {
-  try {
-    const url = new URL(req.url);
-    const id = url.searchParams.get("id");
-    if (!id || !ObjectId.isValid(id)) {
-      return NextResponse.json(
-        { error: "Valid id query parameter required" },
-        { status: 400 }
-      );
-    }
+        /* ---------- DB ---------- */
+        const client = await clientPromise;
+        const db = client.db(process.env.MONGODB_DBNAME);
 
-    const collection = await getCollection();
-    const existing = await collection.findOne({ _id: new ObjectId(id) });
-    if (!existing)
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-    // delete from Cloudinary
-    if (existing.cloudinary && existing.cloudinary.public_id) {
-      try {
-        await cloudinary.uploader.destroy(existing.cloudinary.public_id, {
-          resource_type: "image",
+        /* ---------- CHECK PROPERTY + IMAGE ---------- */
+        const property = await db.collection("properties").findOne({
+            _id: new ObjectId(propertyId),
+            "images._id": new ObjectId(imageId),
         });
-      } catch (e) {
-        // ignore deletion errors but log if needed
-      }
-    }
 
-    await collection.deleteOne({ _id: new ObjectId(id) });
-    return NextResponse.json({ success: true });
-  } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
+        if (!property) {
+            return NextResponse.json(
+                { error: "Property or image not found" },
+                { status: 404 }
+            );
+        }
+
+        /* ---------- BUILD IMAGE UPDATE ---------- */
+        const imageUpdate = {};
+
+        if (direction !== null) imageUpdate["images.$.direction"] = direction;
+        if (aspect_ratio !== null) imageUpdate["images.$.aspect_ratio"] = aspect_ratio;
+
+        /* ---------- NEW IMAGE FILE ---------- */
+        if (file instanceof File && file.size > 0) {
+            const buffer = Buffer.from(await file.arrayBuffer());
+            const key = `properties/${propertyId}/${uuidv4()}-${file.name}`;
+
+            await s3.send(
+                new PutObjectCommand({
+                    Bucket: bucket,
+                    Key: key,
+                    Body: buffer,
+                    ContentType: file.type,
+                })
+            );
+
+            imageUpdate["images.$.url"] =
+                `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+        }
+
+        if (Object.keys(imageUpdate).length === 0) {
+            return NextResponse.json(
+                { error: "Nothing to update" },
+                { status: 400 }
+            );
+        }
+
+        /* ---------- UPDATE IMAGE OBJECT ---------- */
+        const result = await db.collection("properties").updateOne(
+            {
+                _id: new ObjectId(propertyId),
+                "images._id": new ObjectId(imageId),
+            },
+            { $set: imageUpdate }
+        );
+
+        if (result.modifiedCount === 0) {
+            throw new Error("Image update failed");
+        }
+
+        /* ---------- SUCCESS ---------- */
+        return NextResponse.json(
+            {
+                success: true,
+                message: "Image updated successfully",
+                propertyId,
+                imageId,
+            },
+            { status: 200 }
+        );
+    } catch (error) {
+        console.error("UPDATE ERROR:", error);
+
+        return NextResponse.json(
+            {
+                success: false,
+                error: error.message || "Image update failed",
+            },
+            { status: 500 }
+        );
+    }
 }
+
