@@ -1,6 +1,5 @@
 import Joi from "joi";
 import bcrypt from "bcrypt";
-import clientPromise from "../../lib/db";
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 
