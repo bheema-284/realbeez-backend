@@ -56,6 +56,7 @@ export const postSchema = Joi.object({
     flat_no: Joi.string().required(),
     images: Joi.array().items(imageSchema).required(),
     videos: Joi.array().items(videoSchema).required(),
+    documents: Joi.array().items(Joi.string().uri()).required(),
     bookmark: bookmarkSchema.required(),
     wishlist: wishlistSchema.required()
 });
