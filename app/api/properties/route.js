@@ -1,5 +1,5 @@
 import clientPromise from "@/app/lib/db";
-import { postSchema } from "./schema";
+import { postSchema, validatePropertyByType } from "./schema";
 import { ObjectId } from "mongodb";
 
 export async function GET(request) {
@@ -10,6 +10,7 @@ export async function GET(request) {
         const { searchParams } = new URL(request.url);
         const id = searchParams.get("id");
         const search = searchParams.get("search");
+        const type = searchParams.get("type"); // Add type filter
 
         if (id) {
             if (!ObjectId.isValid(id))
@@ -22,11 +23,16 @@ export async function GET(request) {
             return Response.json(property);
         }
 
-        // ✅ Handle search by title or type
+        // Handle search by title or type
         let query = {};
         if (search && search.trim() !== "") {
             const regex = new RegExp(search, "i");
             query = { $or: [{ title: regex }, { type: regex }] };
+        }
+
+        // Add type filter if provided
+        if (type && type.trim() !== "") {
+            query.type = type;
         }
 
         const properties = await db.collection("properties").find(query).toArray();
@@ -38,19 +44,37 @@ export async function GET(request) {
     }
 }
 
-
 export async function POST(req) {
     try {
         const body = await req.json();
 
-        // Validate request body
-        const { error, value } = postSchema.validate(body);
-        if (error) {
+        // First validate the base schema
+        const { error: baseError, value } = postSchema.validate(body, { abortEarly: false });
+        if (baseError) {
             return new Response(
-                JSON.stringify({ error: error.details[0].message }),
+                JSON.stringify({
+                    error: "Validation failed",
+                    details: baseError.details.map(d => d.message)
+                }),
                 { status: 400, headers: { "Content-Type": "application/json" } }
             );
         }
+
+        // Then validate type-specific required fields
+        const { error: typeError } = validatePropertyByType(value);
+        if (typeError) {
+            return new Response(
+                JSON.stringify({
+                    error: "Type-specific validation failed",
+                    details: typeError.details.map(d => d.message)
+                }),
+                { status: 400, headers: { "Content-Type": "application/json" } }
+            );
+        }
+
+        // Add timestamps
+        value.createdAt = new Date();
+        value.updatedAt = new Date();
 
         // Insert into MongoDB
         const client = await clientPromise;
@@ -58,10 +82,14 @@ export async function POST(req) {
         const result = await db.collection("properties").insertOne(value);
 
         return new Response(
-            JSON.stringify({ message: "Property created successfully", insertedId: result.insertedId }),
+            JSON.stringify({
+                message: "Property created successfully",
+                insertedId: result.insertedId
+            }),
             { status: 200, headers: { "Content-Type": "application/json" } }
         );
     } catch (err) {
+        console.error("Error in POST /api/properties:", err);
         return new Response(
             JSON.stringify({ error: err.message }),
             { status: 500, headers: { "Content-Type": "application/json" } }
@@ -86,12 +114,30 @@ export async function PUT(req) {
         // Extract _id and separate it from update data
         const { _id, ...updateData } = body;
 
-        // Validate request body with stripUnknown: true to remove unknown fields
-        const { error, value } = postSchema.validate(updateData, { stripUnknown: true });
+        // First validate the base schema
+        const { error: baseError, value } = postSchema.validate(updateData, {
+            abortEarly: false,
+            stripUnknown: true
+        });
 
-        if (error) {
-            return Response.json({ error: error.details[0].message }, { status: 400 });
+        if (baseError) {
+            return Response.json({
+                error: "Validation failed",
+                details: baseError.details.map(d => d.message)
+            }, { status: 400 });
         }
+
+        // Then validate type-specific required fields
+        const { error: typeError } = validatePropertyByType(value);
+        if (typeError) {
+            return Response.json({
+                error: "Type-specific validation failed",
+                details: typeError.details.map(d => d.message)
+            }, { status: 400 });
+        }
+
+        // Add updated timestamp
+        value.updatedAt = new Date();
 
         // Connect to MongoDB
         const client = await clientPromise;
@@ -116,25 +162,33 @@ export async function PUT(req) {
         return Response.json({ error: err.message }, { status: 500 });
     }
 }
+
+// Optional: Add DELETE method
 export async function DELETE(req) {
     try {
         const { searchParams } = new URL(req.url);
-        const id = searchParams.get("id");  
+        const id = searchParams.get("id");
+
         if (!id) {
-            return Response.json({ error: "Property ID is required for deletion" }, { status: 400 });
+            return Response.json({ error: "Property ID is required" }, { status: 400 });
         }
+
         if (!ObjectId.isValid(id)) {
             return Response.json({ error: "Invalid property ID format" }, { status: 400 });
         }
+
         const client = await clientPromise;
         const db = client.db(process.env.MONGODB_DBNAME);
+
         const result = await db.collection("properties").deleteOne({ _id: new ObjectId(id) });
+
         if (result.deletedCount === 0) {
             return Response.json({ error: "Property not found" }, { status: 404 });
-        }   
+        }
+
         return Response.json({ message: "Property deleted successfully" }, { status: 200 });
     } catch (err) {
         console.error("Error in DELETE /api/properties:", err);
         return Response.json({ error: err.message }, { status: 500 });
-    } 
+    }
 }
