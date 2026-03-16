@@ -10,7 +10,7 @@ export async function GET(request) {
         const { searchParams } = new URL(request.url);
         const id = searchParams.get("id");
         const search = searchParams.get("search");
-        const type = searchParams.get("type"); // Add type filter
+        const type = searchParams.get("type");
 
         if (id) {
             if (!ObjectId.isValid(id))
@@ -163,7 +163,6 @@ export async function PUT(req) {
     }
 }
 
-// Optional: Add DELETE method
 export async function DELETE(req) {
     try {
         const { searchParams } = new URL(req.url);

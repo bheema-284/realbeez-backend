@@ -130,7 +130,7 @@ export const postSchema = Joi.object({
     })
 });
 
-// Optional: Create a dynamic schema validator based on property type
+// Fixed type-specific validation
 export const validatePropertyByType = (property) => {
     const baseValidation = postSchema.validate(property, { abortEarly: false });
 
@@ -138,58 +138,52 @@ export const validatePropertyByType = (property) => {
         return baseValidation;
     }
 
-    // Additional type-specific validations can be added here if needed
     const { type } = property;
+    const errors = [];
 
     switch (type) {
         case 'apartment':
-            // Required fields for apartments
-            const apartmentRequired = Joi.object({
-                area_sq_ft: Joi.number().required(),
-                bedrooms: Joi.number().required(),
-                bathrooms: Joi.number().required(),
-                no_of_floors: Joi.number().required(),
-                floor_no: Joi.number().required(),
-                land_share: Joi.number().required()
-            });
-            return apartmentRequired.validate(property, { abortEarly: false });
+            if (!property.area_sq_ft) errors.push('"area_sq_ft" is required for apartment');
+            if (!property.bedrooms) errors.push('"bedrooms" is required for apartment');
+            if (!property.bathrooms) errors.push('"bathrooms" is required for apartment');
+            if (!property.no_of_floors) errors.push('"no_of_floors" is required for apartment');
+            if (!property.floor_no) errors.push('"floor_no" is required for apartment');
+            if (!property.land_share) errors.push('"land_share" is required for apartment');
+            break;
 
         case 'villa':
-            const villaRequired = Joi.object({
-                area_sq_ft: Joi.number().required(),
-                built_up_area: Joi.number().required(),
-                bedrooms: Joi.number().required(),
-                bathrooms: Joi.number().required()
-            });
-            return villaRequired.validate(property, { abortEarly: false });
+            if (!property.area_sq_ft) errors.push('"area_sq_ft" is required for villa');
+            if (!property.built_up_area) errors.push('"built_up_area" is required for villa');
+            if (!property.bedrooms) errors.push('"bedrooms" is required for villa');
+            if (!property.bathrooms) errors.push('"bathrooms" is required for villa');
+            break;
 
         case 'farm land':
-            const farmlandRequired = Joi.object({
-                land_area_acres: Joi.number().required()
-            });
-            return farmlandRequired.validate(property, { abortEarly: false });
+            if (!property.land_area_acres) errors.push('"land_area_acres" is required for farm land');
+            break;
 
         case 'open plots':
-            const openlandRequired = Joi.object({
-                land_area_sq_yds: Joi.number().required()
-            });
-            return openlandRequired.validate(property, { abortEarly: false });
+            if (!property.land_area_sq_yds) errors.push('"land_area_sq_yds" is required for open plots');
+            break;
 
         case 'commercial':
-            const commercialRequired = Joi.object({
-                area_sq_ft: Joi.number().required(),
-                commercial_type: Joi.string().required()
-            });
-            return commercialRequired.validate(property, { abortEarly: false });
+            if (!property.area_sq_ft) errors.push('"area_sq_ft" is required for commercial');
+            if (!property.commercial_type) errors.push('"commercial_type" is required for commercial');
+            break;
 
         case 'godown':
-            const godownRequired = Joi.object({
-                area_sq_ft: Joi.number().required(),
-                warehouse_type: Joi.string().required()
-            });
-            return godownRequired.validate(property, { abortEarly: false });
-
-        default:
-            return { error: null, value: property };
+            if (!property.area_sq_ft) errors.push('"area_sq_ft" is required for godown');
+            if (!property.warehouse_type) errors.push('"warehouse_type" is required for godown');
+            break;
     }
+
+    if (errors.length > 0) {
+        return {
+            error: {
+                details: errors.map(msg => ({ message: msg }))
+            }
+        };
+    }
+
+    return { error: null, value: property };
 };
