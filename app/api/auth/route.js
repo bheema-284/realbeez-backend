@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import { SignJWT } from 'jose';
 import nodemailer from 'nodemailer';
 import { ObjectId } from 'mongodb';
-import { registerSchema, loginSchema, checkUserSchema, validateData } from '@/app/lib/validation';
+// import { registerSchema, loginSchema, checkUserSchema, validateData } from '@/app/lib/validation';
 
 // Generate random OTP
 const generateOTP = () => {
@@ -392,25 +392,30 @@ export async function POST(request) {
 
         console.log('Processing action:', action);
 
+        // Connect to database
         let client, db, usersCollection, otpCollection;
         try {
+            console.log('Connecting to database...');
             client = await clientPromise;
             db = client.db();
             await db.command({ ping: 1 });
             usersCollection = db.collection('users');
             otpCollection = db.collection('otp_logs');
 
+            // Create indexes if they don't exist
             await otpCollection.createIndex({ identifier: 1, type: 1 });
             await otpCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 86400 });
 
             console.log('✅ Database connected successfully');
         } catch (dbError) {
+            console.error('Database connection error:', dbError);
             return NextResponse.json({
                 success: false,
-                error: 'Database connection failed'
+                error: 'Database connection failed. Please try again later.'
             }, { status: 500, headers });
         }
 
+        // Clean expired OTPs
         await cleanExpiredOTPs(otpCollection);
 
         switch (action) {
@@ -810,6 +815,7 @@ export async function POST(request) {
                         } : null
                     }, { headers });
                 } catch (dbError) {
+                    console.error('Database query error:', dbError);
                     return NextResponse.json({
                         success: false,
                         error: 'Database error checking user'
@@ -822,6 +828,7 @@ export async function POST(request) {
                 console.log('Processing registration...');
                 const { name, email, phone, password } = body;
 
+                // Basic validation
                 if (!name || !email || !phone || !password) {
                     return NextResponse.json({
                         success: false,
@@ -858,6 +865,7 @@ export async function POST(request) {
                     }, { status: 400, headers });
                 }
 
+                // Check if user exists
                 const existingEmail = await usersCollection.findOne({
                     email: email.toLowerCase()
                 });
@@ -1051,7 +1059,7 @@ export async function POST(request) {
         console.error('❌ API Error:', error);
         return NextResponse.json({
             success: false,
-            error: 'Internal server error'
+            error: 'Internal server error. Please try again later.'
         }, { status: 500, headers });
     }
 }
