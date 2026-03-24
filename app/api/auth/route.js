@@ -94,11 +94,11 @@ const sendOTPEmail = async (email, otp) => {
     }
 
     try {
-        const subject = `Your Login OTP Code: ${otp} - Real Beez`;
+        const subject = `Your Login OTP Code: ${otp} - Real Beez Projects Pvt Ltd`;
         const html = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: linear-gradient(135deg, #DAA520 0%, #c4941a 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-                    <h1 style="color: white; margin: 0;">Real Beez</h1>
+                    <h1 style="color: white; margin: 0;">Real Beez Projects Pvt Ltd</h1>
                 </div>
                 <div style="padding: 40px; background: #f9f9f9; border-radius: 0 0 10px 10px; border: 1px solid #e0e0e0;">
                     <h2 style="color: #333; margin-top: 0;">Your Login OTP</h2>
@@ -121,11 +121,11 @@ const sendOTPEmail = async (email, otp) => {
         `;
 
         const mailOptions = {
-            from: `"Real Beez" <${process.env.EMAIL_USER}>`,
+            from: `"Real Beez Projects Pvt Ltd" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: subject,
             html: html,
-            text: `Your Real Beez login OTP is: ${otp}. Valid for 10 minutes.`,
+            text: `Your Real Beez Projects Pvt Ltd login OTP is: ${otp}. Valid for 10 minutes.`,
         };
 
         await transporter.verify();
@@ -164,16 +164,16 @@ const sendVerificationEmail = async (email, verificationToken) => {
     }
 
     try {
-        const subject = 'Verify Your Email Address - Real Beez';
+        const subject = 'Verify Your Email Address - Real Beez Projects Pvt Ltd';
         const html = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: linear-gradient(135deg, #DAA520 0%, #c4941a 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-                    <h1 style="color: white; margin: 0;">Real Beez</h1>
+                    <h1 style="color: white; margin: 0;">Real Beez Projects Pvt Ltd</h1>
                 </div>
                 <div style="padding: 40px; background: #f9f9f9; border-radius: 0 0 10px 10px; border: 1px solid #e0e0e0;">
                     <h2 style="color: #333; margin-top: 0;">Verify Your Email Address</h2>
                     <p style="color: #666; font-size: 16px; line-height: 1.6;">
-                        Thank you for registering with Real Beez! Please verify your email address to complete your registration and start using our services.
+                        Thank you for registering with Real Beez Projects Pvt Ltd! Please verify your email address to complete your registration and start using our services.
                     </p>
                     <div style="text-align: center; margin: 35px 0;">
                         <a href="${verificationLink}" style="background-color: #DAA520; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; font-size: 16px;">
@@ -187,14 +187,14 @@ const sendVerificationEmail = async (email, verificationToken) => {
                         ${verificationLink}
                     </p>
                     <p style="color: #999; font-size: 12px; margin-top: 20px;">
-                        This verification link is valid for 24 hours. If you didn't create an account with Real Beez, please ignore this email.
+                        This verification link is valid for 24 hours. If you didn't create an account with Real Beez Projects Pvt Ltd, please ignore this email.
                     </p>
                 </div>
             </div>
         `;
 
         const mailOptions = {
-            from: `"Real Beez" <${process.env.EMAIL_USER}>`,
+            from: `"Real Beez Projects Pvt Ltd" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: subject,
             html: html,
