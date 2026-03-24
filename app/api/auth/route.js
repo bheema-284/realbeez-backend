@@ -5,7 +5,6 @@ import bcrypt from 'bcryptjs';
 import { SignJWT } from 'jose';
 import nodemailer from 'nodemailer';
 import { ObjectId } from 'mongodb';
-// import { registerSchema, loginSchema, checkUserSchema, validateData } from '@/app/lib/validation';
 
 // Generate random OTP
 const generateOTP = () => {
@@ -357,6 +356,29 @@ const cleanExpiredOTPs = async (otpCollection) => {
     }
 };
 
+// Validate user data
+const validateUserData = (data) => {
+    const errors = [];
+    
+    if (!data.name || data.name.trim() === '') {
+        errors.push('Name is required');
+    }
+    
+    if (!data.email || !isValidEmail(data.email)) {
+        errors.push('Valid email is required');
+    }
+    
+    if (!data.phone || !isValidPhone(data.phone)) {
+        errors.push('Valid 10-digit phone number is required');
+    }
+    
+    if (!data.password || data.password.length < 6) {
+        errors.push('Password must be at least 6 characters');
+    }
+    
+    return errors;
+};
+
 // Main API handler
 export async function POST(request) {
     const headers = {
@@ -392,31 +414,59 @@ export async function POST(request) {
 
         console.log('Processing action:', action);
 
-        // Connect to database
+        // Connect to database with better error handling
         let client, db, usersCollection, otpCollection;
         try {
             console.log('Connecting to database...');
+            
+            if (!clientPromise) {
+                console.error('clientPromise is not defined');
+                throw new Error('Database client not initialized');
+            }
+            
             client = await clientPromise;
+            
+            if (!client) {
+                console.error('Failed to get database client');
+                throw new Error('Failed to connect to database');
+            }
+            
             db = client.db();
+            
+            // Test the connection
             await db.command({ ping: 1 });
+            
             usersCollection = db.collection('users');
             otpCollection = db.collection('otp_logs');
 
-            // Create indexes if they don't exist
-            await otpCollection.createIndex({ identifier: 1, type: 1 });
-            await otpCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 86400 });
+            // Create indexes if they don't exist (ignore errors if they already exist)
+            try {
+                await otpCollection.createIndex({ identifier: 1, type: 1 });
+                await otpCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 86400 });
+                await usersCollection.createIndex({ email: 1 }, { unique: true });
+                await usersCollection.createIndex({ phone: 1 }, { unique: true });
+            } catch (indexError) {
+                console.log('Index creation warning:', indexError.message);
+                // Continue even if indexes fail
+            }
 
             console.log('✅ Database connected successfully');
         } catch (dbError) {
             console.error('Database connection error:', dbError);
             return NextResponse.json({
                 success: false,
-                error: 'Database connection failed. Please try again later.'
+                error: 'Database connection failed. Please try again later.',
+                debug: process.env.NODE_ENV === 'development' ? dbError.message : undefined
             }, { status: 500, headers });
         }
 
         // Clean expired OTPs
-        await cleanExpiredOTPs(otpCollection);
+        try {
+            await cleanExpiredOTPs(otpCollection);
+        } catch (cleanError) {
+            console.log('Error cleaning expired OTPs:', cleanError.message);
+            // Continue even if cleanup fails
+        }
 
         switch (action) {
             // ========== SEND OTP FOR LOGIN (ONLY FOR VERIFIED USERS) ==========
@@ -773,36 +823,29 @@ export async function POST(request) {
             // ========== CHECK USER ==========
             case 'check-user': {
                 console.log('Checking user...');
-                const { identifier, type = 'email' } = body;
-
-                let checkQuery = {};
-                if (type === 'email') {
-                    if (!identifier) {
-                        return NextResponse.json({
-                            success: false,
-                            error: 'Email is required'
-                        }, { status: 400, headers });
-                    }
-                    checkQuery.email = identifier.toLowerCase();
-                } else if (type === 'phone') {
-                    if (!identifier) {
-                        return NextResponse.json({
-                            success: false,
-                            error: 'Phone is required'
-                        }, { status: 400, headers });
-                    }
-                    const formattedPhone = formatPhoneNumber(identifier);
-                    if (!formattedPhone) {
-                        return NextResponse.json({
-                            success: false,
-                            error: 'Invalid phone number'
-                        }, { status: 400, headers });
-                    }
-                    checkQuery.phone = formattedPhone;
-                }
+                const { email, phone } = body;
 
                 try {
-                    const existingUser = await usersCollection.findOne(checkQuery);
+                    let existingUser = null;
+                    
+                    if (email) {
+                        existingUser = await usersCollection.findOne({
+                            email: email.toLowerCase()
+                        });
+                    } else if (phone) {
+                        const formattedPhone = formatPhoneNumber(phone);
+                        if (formattedPhone) {
+                            existingUser = await usersCollection.findOne({
+                                phone: formattedPhone
+                            });
+                        }
+                    } else {
+                        return NextResponse.json({
+                            success: false,
+                            error: 'Either email or phone is required'
+                        }, { status: 400, headers });
+                    }
+
                     return NextResponse.json({
                         success: true,
                         exists: !!existingUser,
@@ -828,32 +871,12 @@ export async function POST(request) {
                 console.log('Processing registration...');
                 const { name, email, phone, password } = body;
 
-                // Basic validation
-                if (!name || !email || !phone || !password) {
+                // Validate input
+                const validationErrors = validateUserData({ name, email, phone, password });
+                if (validationErrors.length > 0) {
                     return NextResponse.json({
                         success: false,
-                        error: 'All fields are required'
-                    }, { status: 400, headers });
-                }
-
-                if (!isValidEmail(email)) {
-                    return NextResponse.json({
-                        success: false,
-                        error: 'Invalid email format'
-                    }, { status: 400, headers });
-                }
-
-                if (!isValidPhone(phone)) {
-                    return NextResponse.json({
-                        success: false,
-                        error: 'Invalid phone number'
-                    }, { status: 400, headers });
-                }
-
-                if (password.length < 6) {
-                    return NextResponse.json({
-                        success: false,
-                        error: 'Password must be at least 6 characters'
+                        error: validationErrors[0]
                     }, { status: 400, headers });
                 }
 
