@@ -359,23 +359,23 @@ const cleanExpiredOTPs = async (otpCollection) => {
 // Validate user data
 const validateUserData = (data) => {
     const errors = [];
-    
+
     if (!data.name || data.name.trim() === '') {
         errors.push('Name is required');
     }
-    
+
     if (!data.email || !isValidEmail(data.email)) {
         errors.push('Valid email is required');
     }
-    
+
     if (!data.phone || !isValidPhone(data.phone)) {
         errors.push('Valid 10-digit phone number is required');
     }
-    
+
     if (!data.password || data.password.length < 6) {
         errors.push('Password must be at least 6 characters');
     }
-    
+
     return errors;
 };
 
@@ -418,24 +418,24 @@ export async function POST(request) {
         let client, db, usersCollection, otpCollection;
         try {
             console.log('Connecting to database...');
-            
+
             if (!clientPromise) {
                 console.error('clientPromise is not defined');
                 throw new Error('Database client not initialized');
             }
-            
+
             client = await clientPromise;
-            
+
             if (!client) {
                 console.error('Failed to get database client');
                 throw new Error('Failed to connect to database');
             }
-            
+
             db = client.db();
-            
+
             // Test the connection
             await db.command({ ping: 1 });
-            
+
             usersCollection = db.collection('users');
             otpCollection = db.collection('otp_logs');
 
@@ -469,9 +469,257 @@ export async function POST(request) {
         }
 
         switch (action) {
-            // ========== SEND OTP FOR LOGIN (ONLY FOR VERIFIED USERS) ==========
+            // ========== SEND EMAIL OTP (BACKWARD COMPATIBLE) ==========
+            case 'send-email-otp': {
+                console.log('Sending email OTP (backward compatible)...');
+                const { email: emailForOTP, purpose = 'login' } = body;
+
+                if (!emailForOTP) {
+                    return NextResponse.json({
+                        success: false,
+                        error: 'Email is required'
+                    }, { status: 400, headers });
+                }
+
+                if (!isValidEmail(emailForOTP)) {
+                    return NextResponse.json({
+                        success: false,
+                        error: 'Invalid email format'
+                    }, { status: 400, headers });
+                }
+
+                try {
+                    const user = await usersCollection.findOne({
+                        email: emailForOTP.toLowerCase()
+                    });
+
+                    if (!user) {
+                        return NextResponse.json({
+                            success: false,
+                            error: 'No account found with this email'
+                        }, { status: 404, headers });
+                    }
+
+                    // Check if email is verified
+                    if (!user.isEmailVerified && purpose === 'login') {
+                        // Send verification link instead of OTP
+                        const verificationToken = generateVerificationToken();
+
+                        await storeVerificationToken(otpCollection, {
+                            identifier: verificationToken,
+                            type: 'email-verification',
+                            userId: user._id.toString(),
+                            userEmail: user.email,
+                            userName: user.name,
+                            purpose: 'verify-email'
+                        });
+
+                        const verificationResult = await sendVerificationEmail(user.email, verificationToken);
+
+                        return NextResponse.json({
+                            success: true,
+                            requiresEmailVerification: true,
+                            message: 'Please verify your email address first. A verification link has been sent to your email.',
+                            email: user.email,
+                            user: {
+                                id: user._id.toString(),
+                                email: user.email,
+                                name: user.name,
+                                isEmailVerified: false
+                            },
+                            simulatedEmail: verificationResult.simulated || false
+                        }, { headers });
+                    }
+
+                    // Email is verified or purpose is not login, send OTP
+                    const loginOTP = generateOTP();
+
+                    const otpId = await storeOTP(otpCollection, {
+                        identifier: emailForOTP.toLowerCase(),
+                        otp: loginOTP,
+                        type: 'email-verification',
+                        userId: user._id.toString(),
+                        userEmail: user.email,
+                        userName: user.name,
+                        purpose: purpose,
+                        metadata: {
+                            actionType: purpose
+                        }
+                    });
+
+                    const otpResult = await sendOTPEmail(user.email, loginOTP);
+
+                    if (!otpResult.success && !otpResult.simulated) {
+                        await otpCollection.deleteOne({ _id: new ObjectId(otpId) });
+                        return NextResponse.json({
+                            success: false,
+                            error: 'Failed to send OTP'
+                        }, { status: 500, headers });
+                    }
+
+                    return NextResponse.json({
+                        success: true,
+                        message: 'OTP sent to your email',
+                        email: user.email,
+                        otpId: otpId,
+                        method: 'email',
+                        purpose: purpose,
+                        simulatedEmail: otpResult.simulated || false,
+                        otp: otpResult.otp,
+                        user: {
+                            id: user._id.toString(),
+                            email: user.email,
+                            name: user.name,
+                            phone: user.phone,
+                            isEmailVerified: user.isEmailVerified || false
+                        }
+                    }, { headers });
+
+                } catch (error) {
+                    console.error('Send email OTP error:', error);
+                    return NextResponse.json({
+                        success: false,
+                        error: 'Error sending OTP'
+                    }, { status: 500, headers });
+                }
+            }
+
+            // ========== VERIFY EMAIL OTP (BACKWARD COMPATIBLE) ==========
+            case 'verify-email-otp': {
+                console.log('Verifying email OTP (backward compatible)...');
+                const { email: verifyEmailOTP, otp: emailOtp, actionType = 'login' } = body;
+
+                if (!verifyEmailOTP || !emailOtp) {
+                    return NextResponse.json({
+                        success: false,
+                        error: 'Email and OTP are required'
+                    }, { status: 400, headers });
+                }
+
+                try {
+                    const otpRecord = await getOTP(
+                        otpCollection,
+                        verifyEmailOTP.toLowerCase(),
+                        emailOtp,
+                        'email-verification'
+                    );
+
+                    if (!otpRecord) {
+                        return NextResponse.json({
+                            success: false,
+                            error: 'Invalid or expired OTP'
+                        }, { status: 400, headers });
+                    }
+
+                    if (otpRecord.otp !== emailOtp) {
+                        await updateOTPAttempts(otpCollection, otpRecord._id.toString());
+                        return NextResponse.json({
+                            success: false,
+                            error: 'Invalid OTP'
+                        }, { status: 400, headers });
+                    }
+
+                    await updateOTPAttempts(otpCollection, otpRecord._id.toString(), false);
+
+                    const user = await usersCollection.findOne({
+                        _id: new ObjectId(otpRecord.userId)
+                    });
+
+                    if (!user) {
+                        return NextResponse.json({
+                            success: false,
+                            error: 'User not found'
+                        }, { status: 404, headers });
+                    }
+
+                    // Handle different action types
+                    switch (actionType) {
+                        case 'login':
+                            // Check if email is verified
+                            if (!user.isEmailVerified) {
+                                return NextResponse.json({
+                                    success: false,
+                                    requiresEmailVerification: true,
+                                    message: 'Please verify your email address first.',
+                                    email: user.email,
+                                    user: {
+                                        id: user._id.toString(),
+                                        email: user.email,
+                                        name: user.name,
+                                        isEmailVerified: false
+                                    }
+                                }, { headers });
+                            }
+
+                            // Generate login token
+                            const token = await createToken({
+                                id: user._id.toString(),
+                                email: user.email,
+                                name: user.name,
+                                role: user.role
+                            });
+
+                            await usersCollection.updateOne(
+                                { _id: user._id },
+                                { $set: { lastLogin: new Date(), updatedAt: new Date() } }
+                            );
+
+                            return NextResponse.json({
+                                success: true,
+                                message: 'Login successful',
+                                token: token,
+                                user: {
+                                    id: user._id.toString(),
+                                    email: user.email,
+                                    name: user.name,
+                                    phone: user.phone,
+                                    role: user.role,
+                                    isEmailVerified: user.isEmailVerified
+                                }
+                            }, { headers });
+
+                        case 'verify-email':
+                            // Mark email as verified
+                            await usersCollection.updateOne(
+                                { _id: user._id },
+                                { $set: { isEmailVerified: true, emailVerifiedAt: new Date(), updatedAt: new Date() } }
+                            );
+
+                            return NextResponse.json({
+                                success: true,
+                                message: 'Email verified successfully!',
+                                user: {
+                                    id: user._id.toString(),
+                                    email: user.email,
+                                    name: user.name,
+                                    isEmailVerified: true
+                                }
+                            }, { headers });
+
+                        default:
+                            return NextResponse.json({
+                                success: true,
+                                message: 'OTP verified successfully',
+                                user: {
+                                    id: user._id.toString(),
+                                    email: user.email,
+                                    name: user.name
+                                }
+                            }, { headers });
+                    }
+
+                } catch (error) {
+                    console.error('Verify email OTP error:', error);
+                    return NextResponse.json({
+                        success: false,
+                        error: 'Error verifying OTP'
+                    }, { status: 500, headers });
+                }
+            }
+
+            // ========== SEND LOGIN OTP (NEW ACTION) ==========
             case 'send-login-otp': {
-                console.log('Sending login OTP...');
+                console.log('Sending login OTP (new action)...');
                 const { email: loginEmail } = body;
 
                 if (!loginEmail) {
@@ -665,7 +913,7 @@ export async function POST(request) {
             // ========== VERIFY EMAIL LINK ==========
             case 'verify-email-link': {
                 console.log('Verifying email link...');
-                const { token: verificationToken, email: tokenEmail } = body;
+                const { token: verificationToken } = body;
 
                 if (!verificationToken) {
                     return NextResponse.json({
@@ -827,7 +1075,7 @@ export async function POST(request) {
 
                 try {
                     let existingUser = null;
-                    
+
                     if (email) {
                         existingUser = await usersCollection.findOne({
                             email: email.toLowerCase()
@@ -1075,7 +1323,7 @@ export async function POST(request) {
             default:
                 return NextResponse.json({
                     success: false,
-                    error: 'Invalid action'
+                    error: 'Invalid action. Available actions: send-email-otp, verify-email-otp, send-login-otp, verify-login-otp, verify-email-link, resend-verification, check-user, register, send-phone-otp, verify-phone-otp'
                 }, { status: 400, headers });
         }
     } catch (error) {
