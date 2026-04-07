@@ -10,7 +10,7 @@ export async function POST(req) {
         const formData = await req.formData();
 
         /* ---------- GET & VALIDATE PROPERTY ID ---------- */
-        const propertyId = formData.get("id");
+        const propertyId = formData.get("_id");
 
         if (!propertyId) {
             return NextResponse.json(
@@ -121,7 +121,7 @@ export async function PUT(req) {
 
         /* ---------- IDS ---------- */
         const propertyId = formData.get("_id");
-        const imageId = formData.get("id");
+        const imageId = formData.get("imageId");
 
         if (!ObjectId.isValid(propertyId) || !ObjectId.isValid(imageId)) {
             return NextResponse.json(
@@ -230,7 +230,7 @@ export async function PUT(req) {
 export async function DELETE(req) {
     try {
         const { searchParams } = new URL(req.url);
-        const propertyId = searchParams.get("propertyId");
+        const propertyId = searchParams.get("_id");
         const imageId = searchParams.get("imageId");    
         if (!ObjectId.isValid(propertyId) || !ObjectId.isValid(imageId)) {
             return NextResponse.json(
