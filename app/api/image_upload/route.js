@@ -76,7 +76,7 @@ export async function POST(req) {
         );
 
         const imageData = {
-            id: new ObjectId(),
+            _id: new ObjectId(),
             direction,
             aspect_ratio,
             url: `https://${bucket}.s3.${region}.amazonaws.com/${key}`
